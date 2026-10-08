@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Cleaner
 // @namespace    https://github.com/dotKz/chatgpt-cleaner
-// @version      1.0.0
+// @version      1.0.1
 // @description  Manage, filter, archive, restore and bulk-delete ChatGPT conversations from a native-style panel.
 // @author       dotKz
 // @license      MIT
@@ -1025,7 +1025,14 @@
 
     ui.archive.onclick = () => performMutation('archive');
     ui.restore.onclick = () => performMutation('restore');
-    ui.delete.onclick = () => performMutation('delete');
+    ui.delete.onclick = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      void performMutation('delete').catch(error => {
+        console.error('[ChatGPT Cleaner] Delete failed:', error);
+        setToast(`${t('error')}: ${error.message}`, false, 6000);
+      });
+    };
 
     ui.list.onclick = event => {
       const more = event.target.closest('[data-more]');
@@ -1355,34 +1362,15 @@
     ui.badge.classList.toggle('on', selected.length > 0);
   }
 
+  // Native confirmation avoids modal stacking/click interception regressions.
+  // This is intentionally synchronous and called only from the user's click.
   function confirmDelete(count) {
-    return new Promise(resolve => {
-      ui.dialogText.textContent = tp('deleteConfirmOne', 'deleteConfirmOther', count);
-      ui.dialogBackdrop.classList.add('open');
-      ui.dialogConfirm.focus();
-
-      const finish = value => {
-        ui.dialogConfirm.onclick = null;
-        ui.dialogCancel.onclick = null;
-        ui.dialogBackdrop.classList.remove('open');
-        resolve(value);
-      };
-
-      ui.dialogConfirm.onclick = () => finish(true);
-      ui.dialogCancel.onclick = () => finish(false);
-      ui.dialogBackdrop._finish = finish;
-    });
+    const message = tp('deleteConfirmOne', 'deleteConfirmOther', count);
+    return window.confirm(`${t('deleteTitle')}\n\n${message}`);
   }
 
-  function closeDialog(value = false) {
-    if (!ui.dialogBackdrop?.classList.contains('open')) return;
-    if (typeof ui.dialogBackdrop._finish === 'function') {
-      const finish = ui.dialogBackdrop._finish;
-      ui.dialogBackdrop._finish = null;
-      finish(value);
-    } else {
-      ui.dialogBackdrop.classList.remove('open');
-    }
+  function closeDialog() {
+    ui.dialogBackdrop?.classList.remove('open');
   }
 
   async function performMutation(action) {
@@ -1404,7 +1392,7 @@
     } else {
       payload = { is_visible: false };
       verb = t('deleting');
-      if (!targets.length || !(await confirmDelete(targets.length))) return;
+      if (!targets.length || !confirmDelete(targets.length)) return;
     }
 
     if (!targets.length) return;
